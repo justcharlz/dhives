@@ -52,7 +52,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/rosetta"
 
-	"github.com/justcharlz/dhives/cmd/dhives/opendb"
+	"github.com/justcharlz/dhives/cmd/dhivesd/opendb"
 	"github.com/justcharlz/dhives/indexer"
 	ethdebug "github.com/justcharlz/dhives/rpc/namespaces/ethereum/debug"
 	"github.com/justcharlz/dhives/server/config"
