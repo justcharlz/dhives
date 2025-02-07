@@ -936,7 +936,7 @@ func (app *Evmos) InitChainer(ctx sdk.Context, req *abci.RequestInitChain) (*abc
 
 	// Initialize bank state with total supply
 	bankGenState := banktypes.GetGenesisStateFromAppState(app.appCodec, genesisState)
-	bankGenState.Supply = sdk.NewCoins(sdk.NewCoin(TokenDenom, TotalSupply))
+	bankGenState.Supply = sdk.NewCoins(sdk.NewCoin(appparams.TokenDenom, appparams.TotalSupply))
 	genesisState[banktypes.ModuleName] = app.appCodec.MustMarshalJSON(bankGenState)
 
 	// Initialize staking state
@@ -951,9 +951,9 @@ func (app *Evmos) InitChainer(ctx sdk.Context, req *abci.RequestInitChain) (*abc
 	// Initialize inflation state
 	inflationGenState := inflationtypes.DefaultGenesisState()
 	inflationGenState.Params = inflationtypes.Params{
-		MintDenom: TokenDenom,
+		MintDenom: appparams.TokenDenom,
 		ExponentialCalculation: inflationtypes.ExponentialCalculation{
-			A:             BlockRewardsSupply.ToLegacyDec().Quo(math.LegacyNewDec(35)), // 5M / 35 years
+			A:             appparams.BlockRewardsSupply.ToLegacyDec().Quo(math.LegacyNewDec(35)), // 5M / 35 years
 			R:             InflationParameters.ReductionFactor,
 			C:             math.LegacyZeroDec(),
 			BondingTarget: InflationParameters.TargetBondedRatio,
@@ -974,7 +974,7 @@ func (app *Evmos) InitChainer(ctx sdk.Context, req *abci.RequestInitChain) (*abc
 
 	// Initialize governance state
 	govGenState := govv1.DefaultGenesisState()
-	govGenState.Params = appparams.GovParams
+	govGenState.Params = &appparams.GovParams
 	genesisState[govtypes.ModuleName] = app.appCodec.MustMarshalJSON(govGenState)
 
 	// Initialize slashing state
