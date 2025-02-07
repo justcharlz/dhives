@@ -83,6 +83,7 @@ import (
 	govkeeper "github.com/cosmos/cosmos-sdk/x/gov/keeper"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 	govv1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
+
 	"github.com/cosmos/cosmos-sdk/x/params"
 	paramsclient "github.com/cosmos/cosmos-sdk/x/params/client"
 	paramskeeper "github.com/cosmos/cosmos-sdk/x/params/keeper"
@@ -106,6 +107,7 @@ import (
 	ibctm "github.com/cosmos/ibc-go/v8/modules/light-clients/07-tendermint"
 	ibctesting "github.com/cosmos/ibc-go/v8/testing"
 	ibctestingtypes "github.com/cosmos/ibc-go/v8/testing/types"
+	appparams "github.com/justcharlz/dhives/app/params"
 
 	ratelimit "github.com/cosmos/ibc-apps/modules/rate-limiting/v8"
 	ratelimitkeeper "github.com/cosmos/ibc-apps/modules/rate-limiting/v8/keeper"
@@ -173,13 +175,18 @@ func init() {
 		panic(err)
 	}
 
-	// manually update the power reduction by replacing micro (u) -> atto (a) evmos
+	// manually update the power reduction by replacing micro (u) -> atto (a) dhives
 	sdk.DefaultPowerReduction = evmostypes.PowerReduction
+
 	// modify fee market parameter defaults through global
 	feemarkettypes.DefaultMinGasPrice = MainnetMinGasPrices
 	feemarkettypes.DefaultMinGasMultiplier = MainnetMinGasMultiplier
+
 	// modify default min commission to 5%
 	stakingtypes.DefaultMinCommissionRate = math.LegacyNewDecWithPrec(5, 2)
+
+	// Set default power reduction (used in staking module)
+	sdk.DefaultPowerReduction = math.NewIntFromUint64(1000000000000000000) // 10^18
 }
 
 // Name defines the application binary name
@@ -926,6 +933,64 @@ func (app *Evmos) InitChainer(ctx sdk.Context, req *abci.RequestInitChain) (*abc
 	if err := json.Unmarshal(req.AppStateBytes, &genesisState); err != nil {
 		panic(err)
 	}
+
+	// Initialize bank state with total supply
+	bankGenState := banktypes.GetGenesisStateFromAppState(app.appCodec, genesisState)
+	bankGenState.Supply = sdk.NewCoins(sdk.NewCoin(TokenDenom, TotalSupply))
+	genesisState[banktypes.ModuleName] = app.appCodec.MustMarshalJSON(bankGenState)
+
+	// Initialize staking state
+	stakingGenState := stakingtypes.DefaultGenesisState()
+	stakingGenState.Params.UnbondingTime = StakingParameters.UnbondingTime
+	stakingGenState.Params.MaxValidators = StakingParameters.MaxValidators
+	stakingGenState.Params.MaxEntries = StakingParameters.MaxEntries
+	stakingGenState.Params.HistoricalEntries = StakingParameters.HistoricalEntries
+	stakingGenState.Params.MinCommissionRate = StakingParameters.MinCommissionRate
+	genesisState[stakingtypes.ModuleName] = app.appCodec.MustMarshalJSON(stakingGenState)
+
+	// Initialize inflation state
+	inflationGenState := inflationtypes.DefaultGenesisState()
+	inflationGenState.Params = inflationtypes.Params{
+		MintDenom: TokenDenom,
+		ExponentialCalculation: inflationtypes.ExponentialCalculation{
+			A:             BlockRewardsSupply.ToLegacyDec().Quo(math.LegacyNewDec(35)), // 5M / 35 years
+			R:             InflationParameters.ReductionFactor,
+			C:             math.LegacyZeroDec(),
+			BondingTarget: InflationParameters.TargetBondedRatio,
+			MaxVariance:   math.LegacyZeroDec(),
+		},
+		InflationDistribution: inflationtypes.InflationDistribution{
+			StakingRewards: InflationParameters.InflationDistribution.StakingRewards,
+			CommunityPool:  InflationParameters.InflationDistribution.CommunityPool,
+		},
+		EnableInflation: true,
+	}
+	genesisState[inflationtypes.ModuleName] = app.appCodec.MustMarshalJSON(inflationGenState)
+
+	// Initialize distribution state
+	distrGenState := distrtypes.DefaultGenesisState()
+	distrGenState.Params.CommunityTax = InflationParameters.InflationDistribution.CommunityPool
+	genesisState[distrtypes.ModuleName] = app.appCodec.MustMarshalJSON(distrGenState)
+
+	// Initialize governance state
+	govGenState := govv1.DefaultGenesisState()
+	govGenState.Params = appparams.GovParams
+	genesisState[govtypes.ModuleName] = app.appCodec.MustMarshalJSON(govGenState)
+
+	// Initialize slashing state
+	slashingGenState := slashingtypes.DefaultGenesisState()
+	slashingGenState.Params = appparams.SlashingParams
+	genesisState[slashingtypes.ModuleName] = app.appCodec.MustMarshalJSON(slashingGenState)
+
+	// Initialize IBC transfer state
+	ibcTransferGenState := ibctransfertypes.DefaultGenesisState()
+	ibcTransferGenState.Params = appparams.IBCTransferParams
+	genesisState[ibctransfertypes.ModuleName] = app.appCodec.MustMarshalJSON(ibcTransferGenState)
+
+	// Initialize epochs state
+	epochsGenState := epochstypes.DefaultGenesisState()
+	epochsGenState.Epochs = appparams.EpochsConfig
+	genesisState[epochstypes.ModuleName] = app.appCodec.MustMarshalJSON(epochsGenState)
 
 	if err := app.UpgradeKeeper.SetModuleVersionMap(ctx, app.mm.GetVersionMap()); err != nil {
 		panic(err)
