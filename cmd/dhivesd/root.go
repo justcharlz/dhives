@@ -5,28 +5,32 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
-	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/x/genutil"
+	"github.com/cosmos/cosmos-sdk/client"
+	"github.com/spf13/cast"
+	"github.com/spf13/cobra"
 
 	"cosmossdk.io/log"
 	tmcfg "github.com/cometbft/cometbft/config"
 	dbm "github.com/cosmos/cosmos-db"
-	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
 	"github.com/cosmos/cosmos-sdk/client/keys"
 	"github.com/cosmos/cosmos-sdk/server"
+
 	serverconfig "github.com/cosmos/cosmos-sdk/server/config"
 	servertypes "github.com/cosmos/cosmos-sdk/server/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	"github.com/cosmos/cosmos-sdk/x/auth/types"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/cosmos/cosmos-sdk/x/crisis"
+	"github.com/cosmos/cosmos-sdk/x/genutil"
 	genutilcli "github.com/cosmos/cosmos-sdk/x/genutil/client/cli"
 	genutiltypes "github.com/cosmos/cosmos-sdk/x/genutil/types"
 	"github.com/justcharlz/dhives/app"
-	"github.com/spf13/cast"
-	"github.com/spf13/cobra"
+	cmdcfg "github.com/justcharlz/dhives/cmd/config"
 )
 
 func NewRootCmd() (*cobra.Command, error) {
@@ -40,7 +44,7 @@ func NewRootCmd() (*cobra.Command, error) {
 		WithAccountRetriever(types.AccountRetriever{}).
 		WithBroadcastMode("block").
 		WithHomeDir(app.DefaultNodeHome).
-		WithViper("") // Initialize viper
+		WithViper("")
 
 	rootCmd := &cobra.Command{
 		Use:   "dhivesd",
@@ -51,7 +55,10 @@ func NewRootCmd() (*cobra.Command, error) {
 				return err
 			}
 
-			return server.InterceptConfigsPreRunHandler(cmd, "", nil)
+			customAppTemplate, customAppConfig := initAppConfig()
+			customTMConfig := initTendermintConfig()
+
+			return server.InterceptConfigsPreRunHandler(cmd, customAppTemplate, customAppConfig, customTMConfig)
 		},
 	}
 
@@ -67,7 +74,7 @@ func NewRootCmd() (*cobra.Command, error) {
 			encodingConfig.TxConfig.SigningContext().ValidatorAddressCodec(),
 		),
 		genutilcli.ValidateGenesisCmd(module.NewBasicManager()),
-		AddGenesisAccountCmd(app.DefaultNodeHome), // Add genesis account command
+		AddGenesisAccountCmd(app.DefaultNodeHome),
 		keys.Commands(),
 		server.StatusCommand(),
 	)
@@ -87,10 +94,15 @@ func AddGenesisAccountCmd(defaultNodeHome string) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clientCtx := client.GetClientContextFromCmd(cmd)
 			cdc := clientCtx.Codec
-
+			// Try to set config, ignore if already sealed
+			defer func() {
+				if r := recover(); r != nil {
+					// Config was already sealed, continue
+				}
+			}()
 			config := sdk.GetConfig()
-			config.SetBech32PrefixForAccount(app.Bech32PrefixAccAddr, app.Bech32PrefixAccPub)
-
+			cmdcfg.SetBech32Prefixes(config)
+			cmdcfg.SetBip44CoinType(config)
 			addr, err := sdk.AccAddressFromBech32(args[0])
 			if err != nil {
 				return err
@@ -101,13 +113,21 @@ func AddGenesisAccountCmd(defaultNodeHome string) *cobra.Command {
 				return err
 			}
 
-			// Create and save the genesis account
-			genFile := config.GenesisFile()
+			// Get home directory from flags
+			homeDir, err := cmd.Flags().GetString(flags.FlagHome)
+			if err != nil {
+				return err
+			}
+
+			// Construct genesis file path
+			genFile := filepath.Join(homeDir, "config", "genesis.json")
+
 			appState, genDoc, err := genutiltypes.GenesisStateFromGenFile(genFile)
 			if err != nil {
 				return err
 			}
 
+			// Rest of your code remains the same...
 			authGenState := authtypes.GetGenesisStateFromAppState(cdc, appState)
 			accs, err := authtypes.UnpackAccounts(authGenState.Accounts)
 			if err != nil {
@@ -118,7 +138,6 @@ func AddGenesisAccountCmd(defaultNodeHome string) *cobra.Command {
 				return fmt.Errorf("cannot add account at existing address %s", addr)
 			}
 
-			// Add the new account to the set of genesis accounts
 			baseAccount := authtypes.NewBaseAccount(addr, nil, 0, 0)
 			accs = append(accs, baseAccount)
 

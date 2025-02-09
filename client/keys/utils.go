@@ -1,5 +1,3 @@
-// Copyright Tharsis Labs Ltd.(Evmos)
-// SPDX-License-Identifier:ENCL-1.0(https://github.com/evmos/evmos/blob/main/LICENSE)
 package keys
 
 import (
@@ -11,6 +9,7 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/client/keys"
 	cryptokeyring "github.com/cosmos/cosmos-sdk/crypto/keyring"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
 // available output formats.
@@ -58,4 +57,15 @@ func printTextRecords(w io.Writer, kos []keys.KeyOutput) error {
 	}
 
 	return nil
+}
+
+// CreateKeyring creates a new keyring
+func CreateKeyring(backend string, home string) (cryptokeyring.Keyring, error) {
+	return cryptokeyring.New(
+		sdk.KeyringServiceName(),
+		backend,
+		home,
+		nil,
+		nil,
+	)
 }

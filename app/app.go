@@ -166,28 +166,10 @@ import (
 	// Force-load the tracer engines to trigger registration due to Go-Ethereum v1.10.15 changes
 	_ "github.com/justcharlz/dhives/x/evm/core/tracers/js"
 	_ "github.com/justcharlz/dhives/x/evm/core/tracers/native"
+
+	"github.com/cosmos/cosmos-sdk/crypto/keyring"
+	// cryptotypes "github.com/cosmos/cosmos-sdk/crypto"
 )
-
-func init() {
-	var err error
-	DefaultNodeHome, err = clienthelpers.GetNodeHomeDirectory(".dhivesd")
-	if err != nil {
-		panic(err)
-	}
-
-	// manually update the power reduction by replacing micro (u) -> atto (a) dhives
-	sdk.DefaultPowerReduction = evmostypes.PowerReduction
-
-	// modify fee market parameter defaults through global
-	feemarkettypes.DefaultMinGasPrice = MainnetMinGasPrices
-	feemarkettypes.DefaultMinGasMultiplier = MainnetMinGasMultiplier
-
-	// modify default min commission to 5%
-	stakingtypes.DefaultMinCommissionRate = math.LegacyNewDecWithPrec(5, 2)
-
-	// Set default power reduction (used in staking module)
-	sdk.DefaultPowerReduction = math.NewIntFromUint64(1000000000000000000) // 10^18
-}
 
 // Name defines the application binary name
 const Name = "dhivesd"
@@ -284,6 +266,27 @@ type Evmos struct {
 	qms storetypes.MultiStore
 
 	tpsCounter *tpsCounter
+}
+
+func init() {
+	var err error
+	DefaultNodeHome, err = clienthelpers.GetNodeHomeDirectory(".dhivesd")
+	if err != nil {
+		panic(err)
+	}
+
+	// manually update the power reduction by replacing micro (u) -> atto (a) dhives
+	sdk.DefaultPowerReduction = evmostypes.PowerReduction
+
+	// modify fee market parameter defaults through global
+	feemarkettypes.DefaultMinGasPrice = MainnetMinGasPrices
+	feemarkettypes.DefaultMinGasMultiplier = MainnetMinGasMultiplier
+
+	// modify default min commission to 5%
+	stakingtypes.DefaultMinCommissionRate = math.LegacyNewDecWithPrec(5, 2)
+
+	// Set default power reduction (used in staking module)
+	sdk.DefaultPowerReduction = math.NewIntFromUint64(1000000000000000000) // 10^18
 }
 
 // SimulationManager implements runtime.AppI
@@ -1204,6 +1207,26 @@ func (app *Evmos) AutoCliOpts() autocli.AppOptions {
 		ValidatorAddressCodec: authcodec.NewBech32Codec(sdk.GetConfig().GetBech32ValidatorAddrPrefix()),
 		ConsensusAddressCodec: authcodec.NewBech32Codec(sdk.GetConfig().GetBech32ConsensusAddrPrefix()),
 	}
+}
+
+func initKeyring(appOpts servertypes.AppOptions) keyring.Keyring {
+	// Get the home directory
+	homeDir := cast.ToString(appOpts.Get("home"))
+	if homeDir == "" {
+		homeDir = DefaultNodeHome
+	}
+
+	kb, err := keyring.New(
+		Name,
+		string(keyring.BackendTest),
+		homeDir,
+		nil,
+		encoding.MakeConfig().Codec,
+	)
+	if err != nil {
+		panic(err)
+	}
+	return kb
 }
 
 // RegisterSwaggerAPI registers swagger route with API Server
