@@ -597,9 +597,8 @@ class CosmosCLI:
     ):
         """MsgCreateValidator
         create the node with create_node before call this"""
-        pubkey = (
-            "'"
-            + (
+        try:
+            pubkey = (
                 self.raw(
                     "tendermint",
                     "show-validator",
@@ -608,8 +607,10 @@ class CosmosCLI:
                 .strip()
                 .decode()
             )
-            + "'"
-        )
+            if not pubkey:
+                raise ValueError("Empty validator public key returned")
+        except Exception as e:
+            raise RuntimeError(f"Failed to get validator public key: {str(e)}") from e
         return json.loads(
             self.raw(
                 "tx",
